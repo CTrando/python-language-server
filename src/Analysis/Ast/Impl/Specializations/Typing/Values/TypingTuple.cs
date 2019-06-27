@@ -32,7 +32,7 @@ namespace Microsoft.Python.Analysis.Specializations.Typing.Values {
             return new TypingIterator(iteratorType, this);
         }
 
-        public override IMember Index(object index) 
-            => _collectionType.Index(this, index).GetPythonType().CreateInstance(null, ArgumentSet.EmptyNoContext);
+        public override IMember Index(IArgumentSet args) 
+            => _collectionType.Index(this, args).GetPythonType().CreateInstance(null, ArgumentSet.EmptyNoContext);
     }
 }
