@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using Microsoft.Python.Analysis.Diagnostics;
 using Microsoft.Python.Analysis.Types;
 
 namespace Microsoft.Python.Analysis.Values.Collections {
@@ -78,6 +79,23 @@ namespace Microsoft.Python.Analysis.Values.Collections {
                     // TODO: report bad index type.
                     return 0;
             }
+        }
+
+        private void ReportBadIndex(IArgumentSet args) {
+            var arg = args.Arguments[0].Value as IMember;
+            var argType = arg?.GetPythonType();
+            var expression = args.Expression;
+            var module = args.Eval?.Module;
+
+            args.Eval.ReportDiagnostics(
+                module.Uri,
+                new DiagnosticsEntry(
+                    Resources.BadIndexType.FormatInvariant(argType?.Name),
+                    expression?.GetLocation(module)?.Span ?? default,
+                    ErrorCodes.BadIndexType,
+                    Parsing.Severity.Error,
+                    DiagnosticSource.Analysis
+               ));
         }
 
         public bool IsExact { get; }
