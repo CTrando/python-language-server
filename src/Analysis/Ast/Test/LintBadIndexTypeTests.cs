@@ -32,6 +32,7 @@ hi = l['test']
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
+            diagnostic.SourceSpan.Should().Be(4, 6, 4, 15);
             diagnostic.ErrorCode.Should().Be(ErrorCodes.BadIndexType);
             diagnostic.Message.Should().Be(Resources.BadIndexType.FormatInvariant("str"));
         }
@@ -51,6 +52,7 @@ tmp = hi[1.2]
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
+            diagnostic.SourceSpan.Should().Be(8, 7, 8, 14);
             diagnostic.ErrorCode.Should().Be(ErrorCodes.BadIndexType);
             diagnostic.Message.Should().Be(Resources.BadIndexType.FormatInvariant("float"));
         }
@@ -65,6 +67,7 @@ tmp = hi['hello']
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
+            diagnostic.SourceSpan.Should().Be(3, 7, 3, 18);
             diagnostic.ErrorCode.Should().Be(ErrorCodes.BadIndexType);
             diagnostic.Message.Should().Be(Resources.BadIndexType.FormatInvariant("str"));
         }

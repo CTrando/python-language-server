@@ -13,17 +13,14 @@
 // See the Apache Version 2.0 License for specific language governing
 // permissions and limitations under the License.
 
-using System;
-using System.Collections.Generic;
 using Microsoft.Python.Analysis.Diagnostics;
 using Microsoft.Python.Analysis.Types;
-using Microsoft.Python.Analysis.Diagnostics;
 using Microsoft.Python.Core;
+using System;
+using System.Collections.Generic;
 
 namespace Microsoft.Python.Analysis.Values.Collections {
     internal class PythonCollection : PythonInstance, IPythonCollection {
-        IPythonCollectionType CollectionType;
-
         /// <summary>
         /// Creates collection of the supplied types.
         /// </summary>
@@ -39,7 +36,6 @@ namespace Microsoft.Python.Analysis.Values.Collections {
             bool flatten = true,
             bool exact = false
         ) : base(collectionType) {
-            CollectionType = collectionType;
             var c = contents ?? Array.Empty<IMember>();
             if (flatten && c.Count == 1 && c[0] is IPythonCollection seq) {
                 Contents = seq.Contents;
@@ -53,7 +49,6 @@ namespace Microsoft.Python.Analysis.Values.Collections {
         /// Invokes indexer the instance.
         /// </summary>
         public override IMember Index(IArgumentSet args) {
-            CollectionType.Index(this, args);
             var n = GetIndex(args);
             if (n < 0) {
                 n = Contents.Count + n; // -1 means last, etc.
