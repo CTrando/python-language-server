@@ -189,4 +189,7 @@
   <data name="UnableToDetermineCachePathException" xml:space="preserve">
     <value>Unable to determine analysis cache path. Exception: {0}. Using default '{1}'.</value>
   </data>
+  <data name="BadIndexType" xml:space="preserve">
+    <value>Indices must be integers or slices, not '{0}'.</value>
+  </data>
 </root>

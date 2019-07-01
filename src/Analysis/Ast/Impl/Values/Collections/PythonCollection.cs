@@ -17,9 +17,13 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Python.Analysis.Diagnostics;
 using Microsoft.Python.Analysis.Types;
+using Microsoft.Python.Analysis.Diagnostics;
+using Microsoft.Python.Core;
 
 namespace Microsoft.Python.Analysis.Values.Collections {
     internal class PythonCollection : PythonInstance, IPythonCollection {
+        IPythonCollectionType CollectionType;
+
         /// <summary>
         /// Creates collection of the supplied types.
         /// </summary>
@@ -30,11 +34,12 @@ namespace Microsoft.Python.Analysis.Values.Collections {
         /// and is a sequence, the sequence elements are copied rather than creating
         /// a sequence of sequences with a single element.</param>
         public PythonCollection(
-            IPythonType collectionType,
+            IPythonCollectionType collectionType,
             IReadOnlyList<IMember> contents,
             bool flatten = true,
             bool exact = false
         ) : base(collectionType) {
+            CollectionType = collectionType;
             var c = contents ?? Array.Empty<IMember>();
             if (flatten && c.Count == 1 && c[0] is IPythonCollection seq) {
                 Contents = seq.Contents;
@@ -48,6 +53,7 @@ namespace Microsoft.Python.Analysis.Values.Collections {
         /// Invokes indexer the instance.
         /// </summary>
         public override IMember Index(IArgumentSet args) {
+            CollectionType.Index(this, args);
             var n = GetIndex(args);
             if (n < 0) {
                 n = Contents.Count + n; // -1 means last, etc.
@@ -61,7 +67,7 @@ namespace Microsoft.Python.Analysis.Values.Collections {
         public IReadOnlyList<IMember> Contents { get; protected set; }
         public override IPythonIterator GetIterator() => new PythonIterator(BuiltinTypeId.ListIterator, this);
 
-        public static int GetIndex(IArgumentSet args) {
+        public int GetIndex(IArgumentSet args) {
             // syntax error 
             if (args.Arguments.Count != 1) {
                 return 0;
@@ -76,7 +82,7 @@ namespace Microsoft.Python.Analysis.Values.Collections {
                 case long l:
                     return (int)l;
                 default:
-                    // TODO: report bad index type.
+                    ReportBadIndex(args);
                     return 0;
             }
         }

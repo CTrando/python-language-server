@@ -133,6 +133,15 @@ namespace Microsoft.Python.Analysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Indices must be integers or slices, not &apos;{0}&apos;..
+        /// </summary>
+        internal static string BadIndexType {
+            get {
+                return ResourceManager.GetString("BadIndexType", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Environment variable &apos;{0}&apos; is not set, using the default cache location instead..
         /// </summary>
         internal static string EnvVariableNotSet {
