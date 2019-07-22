@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Python.Analysis;
@@ -85,10 +86,11 @@ namespace Microsoft.Python.LanguageServer.Implementation {
             _server.Dispose();
         }
 
-        private void OnApplyWorkspaceEdit(object sender, ApplyWorkspaceEditEventArgs e)
-            => _rpc.NotifyWithParameterObjectAsync("workspace/applyEdit", e.@params).DoNotWait();
-
         #region Workspace
+
+        private async Task ApplyWorkspaceEdit(ApplyWorkspaceEditParams @params) {
+            await _rpc.InvokeAsync("workspace/applyEdit", @params);
+        }
 
         [JsonRpcMethod("workspace/didChangeWatchedFiles")]
         public async Task DidChangeWatchedFiles(JToken token, CancellationToken cancellationToken) {
@@ -110,9 +112,12 @@ namespace Microsoft.Python.LanguageServer.Implementation {
         #endregion
 
         #region Commands
-        //[JsonRpcMethod("workspace/executeCommand")]
-        //public Task<object> ExecuteCommand(JToken token, CancellationToken cancellationToken)
-        //   => _server.ExecuteCommandAsync(ToObject<ExecuteCommandParams>(token), cancellationToken);
+        [JsonRpcMethod("workspace/executeCommand")]
+        public async Task ExecuteCommand(JToken token, CancellationToken cancellationToken) {
+            await _prioritizer.DefaultPriorityAsync(cancellationToken);
+            var edits = await _server.ExecuteCommandAsync(ToObject<ExecuteCommandParams>(token), cancellationToken);
+            await Task.WhenAll(edits.Select(ApplyWorkspaceEdit));
+        }
         #endregion
 
         #region TextDocument
@@ -264,11 +269,11 @@ namespace Microsoft.Python.LanguageServer.Implementation {
             }
         }
 
-        //[JsonRpcMethod("textDocument/codeAction")]
-        //public async Task<Command[]> CodeAction(JToken token, CancellationToken cancellationToken) {
-        //    await _prioritizer.DefaultPriorityAsync(cancellationToken);
-        //    return await _server.CodeAction(ToObject<CodeActionParams>(token), cancellationToken);
-        //}
+        [JsonRpcMethod("textDocument/codeAction")]
+        public async Task<Command[]> CodeAction(JToken token, CancellationToken cancellationToken) {
+            await _prioritizer.DefaultPriorityAsync(cancellationToken);
+            return await _server.CodeAction(ToObject<CodeActionParams>(token), cancellationToken);
+        }
 
         //[JsonRpcMethod("textDocument/codeLens")]
         //public async Task<CodeLens[]> CodeLens(JToken token, CancellationToken cancellationToken) {

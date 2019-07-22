@@ -81,6 +81,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
                 completionProvider = new CompletionOptions {
                     triggerCharacters = new[] { "." }
                 },
+                codeActionProvider = true,
                 hoverProvider = true,
                 signatureHelpProvider = new SignatureHelpOptions { triggerCharacters = new[] { "(", ",", ")" } },
                 definitionProvider = true,
@@ -93,6 +94,9 @@ namespace Microsoft.Python.LanguageServer.Implementation {
                     firstTriggerCharacter = "\n",
                     moreTriggerCharacter = new[] { ";", ":" }
                 },
+                executeCommandProvider = new ExecuteCommandOptions {
+                    commands = new[] { CodeActions.InsertImport }
+                }
             }
         };
 
@@ -277,7 +281,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
                 _log?.Log(TraceEventType.Information, Resources.AnalysisRestarted);
 
                 RestartAnalysis();
-                
+
                 if (_watchSearchPaths) {
                     ResetPathWatcher();
                 }

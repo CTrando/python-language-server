@@ -70,7 +70,7 @@ namespace Microsoft.Python.LanguageServer.Tests {
         public async Task MemberNamesNotFound(bool is3x) {
             using (var s = await CreateServicesAsync(null, is3x ? PythonVersions.LatestAvailable3X : PythonVersions.LatestAvailable2X, null))
             using (var inspector = new PythonInspectorService(s)) {
-                var response = await inspector.GetModuleMemberNamesAsync("thismoduledoesnotexist");
+                var response = await inspector.GetModuleMemberNamesAsync("tensorflow");
                 response.Should().BeNull();
             }
         }

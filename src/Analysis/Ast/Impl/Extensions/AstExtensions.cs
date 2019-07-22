@@ -28,8 +28,12 @@ namespace Microsoft.Python.Analysis {
         public static Expression FindExpression(this PythonAst ast, int index, FindExpressionOptions options)
             => new ExpressionFinder(ast, options).GetExpression(index) as Expression;
 
+        // TODO use this for imports
         public static Expression FindExpression(this PythonAst ast, SourceLocation location, FindExpressionOptions options)
             => new ExpressionFinder(ast, options).GetExpression(location) as Expression;
+
+        public static Expression FindExpression(this PythonAst ast, SourceSpan span, FindExpressionOptions options)
+                   => new ExpressionFinder(ast, options).GetExpression(span) as Expression;
 
         public static string GetDocumentation(this ScopeStatement node) {
             var docExpr = (node?.Body as SuiteStatement)?.Statements?.FirstOrDefault() as ExpressionStatement;

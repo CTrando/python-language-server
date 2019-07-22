@@ -60,6 +60,7 @@ namespace Microsoft.Python.LanguageServer.Services {
             return PythonRpc.Create(procServices, interpreter.Configuration.InterpreterPath, scriptPath);
         }
 
+        // TODO VERY USEFUL
         public Task<ModuleMemberNamesResponse> GetModuleMemberNamesAsync(string moduleName, CancellationToken cancellationToken = default) {
             return Rpc.InvokeWithCancellationAsync<ModuleMemberNamesResponse>("moduleMemberNames", new[] { moduleName }, cancellationToken);
         }

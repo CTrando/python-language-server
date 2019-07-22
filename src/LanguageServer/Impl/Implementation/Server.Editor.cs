@@ -98,13 +98,22 @@ namespace Microsoft.Python.LanguageServer.Implementation {
 
             var analysis = await Document.GetAnalysisAsync(uri, Services, CompletionAnalysisTimeout, cancellationToken);
             var reference = new DeclarationSource(Services).FindDefinition(analysis, @params.position, out _);
-            return reference != null ? new Location { uri = reference.uri, range = reference.range} : null;
+            return reference != null ? new Location { uri = reference.uri, range = reference.range } : null;
         }
 
         public Task<Reference[]> FindReferences(ReferencesParams @params, CancellationToken cancellationToken) {
             var uri = @params.textDocument.uri;
             _log?.Log(TraceEventType.Verbose, $"References in {uri} at {@params.position}");
             return new ReferenceSource(Services).FindAllReferencesAsync(uri, @params.position, ReferenceSearchOptions.All, cancellationToken);
+        }
+
+        // TODO return a CodeAction object as defined in spec 
+        public Task<Command[]> CodeAction(CodeActionParams @params, CancellationToken cancellationToken) {
+            // TODO look find location from params then if the expression at params is a variable expression then
+            // look and see if it is undefined and offer to import it 
+            var uri = @params.textDocument.uri;
+            _log?.Log(TraceEventType.Verbose, $"Code action request in {uri} at {@params.range}");
+            return this.GetAvailableCommandsAsync(@params, cancellationToken);
         }
 
         public Task<WorkspaceEdit> Rename(RenameParams @params, CancellationToken cancellationToken) {
