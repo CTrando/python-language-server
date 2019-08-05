@@ -21,6 +21,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Python.Analysis;
+using Microsoft.Python.Analysis.Documents;
 using Microsoft.Python.Core;
 using Microsoft.Python.Core.Disposables;
 using Microsoft.Python.Core.Idle;
@@ -50,6 +51,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
 
         private IServiceContainer _services;
         private Server _server;
+        private IRunningDocumentTable _rdt;
         private ILogger _logger;
         private ITelemetryService _telemetry;
         private RequestTimer _requestTimer;
@@ -63,6 +65,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
             _services = services;
             _rpc = rpc;
 
+            _rdt = services.GetService<IRunningDocumentTable>();
             _jsonSerializer = services.GetService<JsonSerializer>();
             _idleTimeTracker = services.GetService<IIdleTimeTracker>();
             _logger = services.GetService<ILogger>();
@@ -115,7 +118,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
         [JsonRpcMethod("workspace/executeCommand")]
         public async Task ExecuteCommand(JToken token, CancellationToken cancellationToken) {
             await _prioritizer.DefaultPriorityAsync(cancellationToken);
-            var edits = await _server.ExecuteCommandAsync(ToObject<ExecuteCommandParams>(token), cancellationToken);
+            var edits = await _server.ExecuteCommandAsync(ToObject<ExecuteCommandParams>(token), _rdt, cancellationToken);
             await Task.WhenAll(edits.Select(ApplyWorkspaceEdit));
         }
         #endregion

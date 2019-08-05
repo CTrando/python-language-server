@@ -22,9 +22,10 @@ using Microsoft.Python.Analysis;
 using Microsoft.Python.Analysis.Analyzer.Expressions;
 using Microsoft.Python.Analysis.Diagnostics;
 using Microsoft.Python.Core.Text;
-using Microsoft.Python.LanguageServer.Implementation;
+using Microsoft.Python.LanguageServer.CodeActions;
 using Microsoft.Python.LanguageServer.Protocol;
 using Microsoft.Python.Parsing.Ast;
+
 
 namespace Microsoft.Python.LanguageServer.Sources {
     internal sealed class UnresolvedImportSource {
@@ -35,31 +36,42 @@ namespace Microsoft.Python.LanguageServer.Sources {
         /// <param name="location"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public IEnumerable<Command> GetImportSuggestions(IDocumentAnalysis analysis, CodeActionParams @params, CancellationToken cancellationToken = default) {
+        public IEnumerable<Command> GetImportSuggestions(IDocumentAnalysis analysis, CodeActionTable caTable, CodeActionParams @params, CancellationToken cancellationToken = default) {
             var ret = new List<Command>();
-
             var mres = analysis.Document.Interpreter.ModuleResolution;
             var modules = mres.CurrentPathResolver.GetAllModuleNames().Where(n => !string.IsNullOrEmpty(n)).Distinct();
             var undefinedDiagnostics = @params.context.diagnostics.Where(d => d.code == ErrorCodes.UndefinedVariable).ToList();
+            var uri = @params.textDocument.uri;
+
             foreach (var diagnostic in undefinedDiagnostics) {
-                ret.AddRange(GetImportSuggestions(analysis, @params, modules, diagnostic.range));
-                ret.AddRange(GetFromImportSuggestions(analysis, @params, modules, diagnostic.range));
+                ret.AddRange(GetImportSuggestions(analysis, caTable, uri, modules, diagnostic.range));
+                //ret.AddRange(GetFromImportSuggestions(analysis, @params, modules, diagnostic.range));
             }
 
             return ret;
         }
 
-        public IEnumerable<Command> GetImportSuggestions(IDocumentAnalysis analysis, CodeActionParams @params, IEnumerable<string> moduleNames, Range range) {
+        public IEnumerable<Command> GetImportSuggestions(IDocumentAnalysis analysis, CodeActionTable caTable, Uri uri, IEnumerable<string> moduleNames, Range range) {
             var ret = new List<Command>();
             var ast = analysis.Ast;
             var expr = ast.FindExpression(range, new FindExpressionOptions { Names = true });
-            switch(expr) {
+            switch (expr) {
                 case NameExpression n:
-                    var uri = @params.textDocument.uri;
+                    var name = n.Name;
+                    // Make sure we can import the name
+                    if(!moduleNames.Contains(name)) {
+                        break;
+                    }
+
+                    var insertText = $"import {n.Name} \n";
+                    var args = new object[] { analysis.Version, uri, insertText};
+                    var id = caTable.Put("auto-import", args);
+
                     var tmp = new Command();
-                    tmp.title = $"import {n.Name}";
-                    tmp.command = CodeActions.InsertImport;
-                    tmp.arguments = new object[] { uri };
+                    tmp.title = insertText;
+                    tmp.command = Actions.InsertImport;
+                    tmp.arguments = new object[] { id };
+
                     ret.Add(tmp);
                     break;
                 default:

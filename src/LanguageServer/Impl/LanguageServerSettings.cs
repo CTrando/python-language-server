@@ -15,10 +15,6 @@
 // permissions and limitations under the License.
 
 namespace Microsoft.Python.LanguageServer.Implementation {
-    public class CodeActions {
-        public const string InsertImport = "insertImport";
-    }
-
     public sealed class LanguageServerSettings : ServerSettings {
         public int diagnosticPublishDelay = 1000;
         public int symbolsHierarchyDepthLimit = 10;

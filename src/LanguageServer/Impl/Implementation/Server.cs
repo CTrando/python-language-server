@@ -30,6 +30,7 @@ using Microsoft.Python.Core.Idle;
 using Microsoft.Python.Core.IO;
 using Microsoft.Python.Core.Logging;
 using Microsoft.Python.Core.Services;
+using Microsoft.Python.LanguageServer.CodeActions;
 using Microsoft.Python.LanguageServer.Completion;
 using Microsoft.Python.LanguageServer.Diagnostics;
 using Microsoft.Python.LanguageServer.Indexing;
@@ -40,6 +41,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
     public sealed partial class Server : IDisposable {
         private readonly DisposableBag _disposableBag = DisposableBag.Create<Server>();
         private readonly CancellationTokenSource _shutdownCts = new CancellationTokenSource();
+        private readonly CodeActionTable _codeActionTable = new CodeActionTable();
         private readonly IServiceManager _services;
 
         private IPythonInterpreter _interpreter;
@@ -95,7 +97,7 @@ namespace Microsoft.Python.LanguageServer.Implementation {
                     moreTriggerCharacter = new[] { ";", ":" }
                 },
                 executeCommandProvider = new ExecuteCommandOptions {
-                    commands = new[] { CodeActions.InsertImport }
+                    commands = new[] { Actions.InsertImport }
                 }
             }
         };

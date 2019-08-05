@@ -15,12 +15,12 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices.ComTypes;
+using System.ComponentModel.Design;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Python.Analysis.Documents;
 using Microsoft.Python.Core.Text;
+using Microsoft.Python.LanguageServer.CodeActions;
 using Microsoft.Python.LanguageServer.Documents;
 using Microsoft.Python.LanguageServer.Protocol;
 using Microsoft.Python.LanguageServer.Sources;
@@ -32,23 +32,25 @@ namespace Microsoft.Python.LanguageServer.Implementation {
         /// </summary>
         /// <returns></returns>
         // add async to method definition if need to do any async work
-        public async Task<IReadOnlyList<ApplyWorkspaceEditParams>> ExecuteCommandAsync(ExecuteCommandParams @params, CancellationToken cancellationToken) {
+        public async Task<IReadOnlyList<ApplyWorkspaceEditParams>> ExecuteCommandAsync(ExecuteCommandParams @params, IRunningDocumentTable rdt, CancellationToken cancellationToken) {
             var edits = new List<ApplyWorkspaceEditParams>();
             switch (@params.command) {
-                case CodeActions.InsertImport:
-                    // based off params id we should do a switch statement and delegate to the resulting class
+                case Actions.InsertImport:
+                    var codeActionID = @params.arguments[0] as string;
+                    _codeActionTable.TryGetValue(codeActionID, out var args);
+
+                    var documentVersion = args[0] as string;
+                    var uri = args[1] as Uri;
+                    var insertText = args[2] as string;
+
                     // will have the string import statement that we need, just need to find where to put it inside the document
-                    var start = new SourceLocation(12, 2);
-                    var end = new SourceLocation(12, 13);
+                    var start = new SourceLocation(1, 1);
 
                     var tmp = new Dictionary<Uri, TextEdit[]>();
                     var text = new TextEdit {
-                        range = new Range { start = start, end = end },
-                        newText = "terrible"
+                        range = new Range { start = start, end = start },
+                        newText = insertText
                     };
-
-                    var uriStr = @params.arguments[0].ToString();
-                    var uri = new Uri(uriStr);
 
                     tmp.Add(uri, new[] { text });
                     var we = new WorkspaceEdit { changes = tmp };
@@ -65,15 +67,8 @@ namespace Microsoft.Python.LanguageServer.Implementation {
             var ret = new List<Command>();
             var uri = @params.textDocument.uri;
             var analysis = await Document.GetAnalysisAsync(uri, Services, 200, cancellationToken);
-            var tmp = new Command();
-            tmp.title = "Screw you visual studio";
-            tmp.command = CodeActions.InsertImport;
-            tmp.arguments = new object[] { @params.textDocument.uri, "Bad", "terrible" };
-
-            ret.Add(tmp);
-            var importSuggestions = new UnresolvedImportSource().GetImportSuggestions(analysis, @params, cancellationToken);
+            var importSuggestions = new UnresolvedImportSource().GetImportSuggestions(analysis, _codeActionTable, @params, cancellationToken);
             ret.AddRange(importSuggestions);
-
             return ret.ToArray();
         }
     }
