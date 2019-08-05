@@ -146,13 +146,6 @@ class C(x + 2):
         }
 
 
-        /// <summary>
-        /// Because typing module is specialized with functions instead of classes,
-        /// we think that we are extending a function instead of a class so we would erroneously
-        /// give a diagnostic message
-        /// </summary>
-        /// <returns></returns>
-        [Ignore]
         [TestMethod, Priority(0)]
         public async Task InheritFromTypingModule() {
             const string code = @"
@@ -161,6 +154,18 @@ import typing
 class C(typing.TypeVar):
     def method(self):
         return 'test'
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task InheritFromTypingModuleNamedTuple() {
+            const string code = @"
+from typing import NamedTuple
+
+class X(NamedTuple):
+    y: str
 ";
             var analysis = await GetAnalysisAsync(code);
             analysis.Diagnostics.Should().BeEmpty();
@@ -388,6 +393,71 @@ class Bar(Foo):
             diagnostic.SourceSpan.Should().Be(4, 7, 4, 10);
             diagnostic.Message.Should().Be(Resources.InheritNonClass.FormatInvariant("X"));
             diagnostic.ErrorCode.Should().Be(ErrorCodes.InheritNonClass);
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task InheritFromUnknownType() {
+            const string code = @"
+x = Y
+class MyEntity(x): 
+    mystr = 'test'
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task InheritFromUnknownInstance() {
+            const string code = @"
+x = Y()
+class MyEntity(x): 
+    mystr = 'test'
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task InheritFromType() {
+            const string code = @"
+class MyEntity(type): 
+    mystr = 'test'
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task InheritFromIntType() {
+            const string code = @"
+class MyEntity(int): 
+    mystr = 'test'
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task InheritFromTypingSpecialCase() {
+            const string code = @"
+from typing import ByteString, Type, Any, SupportsInt, FrozenSet
+class Test(ByteString): 
+    mystr = 'test'
+
+class Test1(Type): 
+    mystr = 'test'
+
+class Test2(Any): 
+    mystr = 'test'
+
+class Test3(SupportsInt):
+    mystr = 'test'
+
+class Test3(FrozenSet):
+    mystr = 'test'
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
         }
     }
 }
