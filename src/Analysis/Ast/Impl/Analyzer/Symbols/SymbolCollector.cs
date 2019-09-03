@@ -138,7 +138,6 @@ namespace Microsoft.Python.Analysis.Analyzer.Symbols {
                 // collection types cannot be determined as imports haven't been processed.
                 var overload = new PythonFunctionOverload(function, fd, _eval.GetLocationOfName(fd), fd.ReturnAnnotation?.ToCodeString(_eval.Ast));
                 addOverload(overload);
-
                 _table.Add(new FunctionEvaluator(_eval, overload));
             }
         }
@@ -166,17 +165,19 @@ namespace Microsoft.Python.Analysis.Analyzer.Symbols {
             foreach (var d in decorators.OfType<NameExpression>()) {
                 switch (d.Name) {
                     case @"property":
+                        AddProperty(node, declaringType, false);
+                        return true;
                     case @"abstractproperty":
-                        AddProperty(node, declaringType);
+                        AddProperty(node, declaringType, true);
                         return true;
                 }
             }
             return false;
         }
 
-        private void AddProperty(FunctionDefinition fd, IPythonType declaringType) {
+        private void AddProperty(FunctionDefinition fd, IPythonType declaringType, bool isAbstract) {
             if (!(_eval.LookupNameInScopes(fd.Name, LookupOptions.Local) is PythonPropertyType existing)) {
-                existing = new PythonPropertyType(fd, _eval.GetLocationOfName(fd), declaringType);
+                existing = new PythonPropertyType(fd, _eval.GetLocationOfName(fd), declaringType, isAbstract);
                 // The variable is transient (non-user declared) hence it does not have location.
                 // Property type is tracking locations for references and renaming.
                 _eval.DeclareVariable(fd.Name, existing, VariableSource.Declaration);

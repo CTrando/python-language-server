@@ -13,7 +13,6 @@
 // See the Apache Version 2.0 License for specific language governing
 // permissions and limitations under the License.
 
-using System.Linq;
 using Microsoft.Python.Analysis.Values;
 using Microsoft.Python.Core;
 using Microsoft.Python.Parsing.Ast;
@@ -21,44 +20,16 @@ using Microsoft.Python.Parsing.Ast;
 namespace Microsoft.Python.Analysis.Types {
     class PythonPropertyType : PythonType, IPythonPropertyType {
         private IPythonFunctionOverload _getter;
-        private bool _isAbstract;
 
-        public PythonPropertyType(FunctionDefinition fd, Location location, IPythonType declaringType)
-            : this(fd.Name, location, declaringType) {
+        public PythonPropertyType(FunctionDefinition fd, Location location, IPythonType declaringType, bool isAbstract)
+            : this(fd.Name, location, declaringType, isAbstract) {
             declaringType.DeclaringModule.AddAstNode(this, fd);
-            ProcessDecorators();
         }
 
-        public PythonPropertyType(string name, Location location, IPythonType declaringType)
+        public PythonPropertyType(string name, Location location, IPythonType declaringType, bool isAbstract)
             : base(name, location, string.Empty, BuiltinTypeId.Property) {
             DeclaringType = declaringType;
-        }
-
-        private void ProcessDecorators() {
-            foreach (var dec in (FunctionDefinition?.Decorators?.Decorators).MaybeEnumerate().OfType<NameExpression>()) {
-                switch (dec.Name) {
-                    case @"staticmethod":
-                        IsStatic = true;
-                        break;
-                    case @"classmethod":
-                        IsClassMethod = true;
-                        break;
-                    case @"abstractmethod":
-                        _isAbstract = true;
-                        break;
-                    case @"abstractstaticmethod":
-                        IsStatic = true;
-                        _isAbstract = true;
-                        break;
-                    case @"abstractclassmethod":
-                        IsClassMethod = true;
-                        _isAbstract = true;
-                        break;
-                    case @"abstractproperty":
-                        _isAbstract = true;
-                        break;
-                }
-            }
+            IsAbstract = isAbstract;
         }
 
         #region IPythonType
@@ -67,12 +38,10 @@ namespace Microsoft.Python.Analysis.Types {
 
         #region IPythonPropertyType
         public FunctionDefinition FunctionDefinition => DeclaringModule.GetAstNode<FunctionDefinition>(this);
-        public override bool IsAbstract => _isAbstract;
+        public override bool IsAbstract { get; }
         public bool IsReadOnly => true;
         public IPythonType DeclaringType { get; }
-        public bool IsStatic { get; private set; }
-        public bool IsClassMethod { get; private set; }
-        public string Description
+        public string Description 
             => Type == null ? Resources.PropertyOfUnknownType : Resources.PropertyOfType.FormatUI(Type.Name);
         public override IMember Call(IPythonInstance instance, string memberName, IArgumentSet args)
             => _getter?.Call(args, instance?.GetPythonType() ?? DeclaringType);
@@ -80,6 +49,5 @@ namespace Microsoft.Python.Analysis.Types {
 
         internal void AddOverload(IPythonFunctionOverload overload) => _getter = _getter ?? overload;
         private IPythonType Type => _getter?.Call(ArgumentSet.WithoutContext, DeclaringType)?.GetPythonType();
-
     }
 }
