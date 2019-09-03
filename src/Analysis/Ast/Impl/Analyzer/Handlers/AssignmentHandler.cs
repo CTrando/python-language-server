@@ -68,16 +68,7 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
             }
         }
 
-        private bool IsValidAssignment(string name, Location loc) {
-            if (Eval.GetInScope(name) is ILocatedMember m) {
-                // Class and function definition are processed first, so only override
-                // if assignment happens after declaration
-                if (loc.IndexSpan.Start < m.Location.IndexSpan.Start) {
-                    return false;
-                }
-            }
-            return true;
-        }
+        private bool IsValidAssignment(string name, Location loc) => !Eval.GetInScope(name).IsDeclaredAfter(loc);
 
         private void HandleNameExpression(NameExpression ne, IMember value) {
             if (Eval.CurrentScope.NonLocals[ne.Name] != null) {
