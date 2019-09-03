@@ -219,7 +219,4 @@
   <data name="NoMethodArgument" xml:space="preserve">
     <value>Method '{0}' has no argument.</value>
   </data>
-  <data name="InvalidDecoratorForFunction" xml:space="preserve">
-    <value>{0} is not a valid decorator for {1} methods.</value>
-  </data>
 </root>
