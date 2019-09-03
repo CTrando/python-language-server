@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -46,7 +47,6 @@ namespace Microsoft.Python.Core.IO {
         /// </summary>
         public static bool HasEndSeparator(string path)
             => !string.IsNullOrEmpty(path) && IsDirectorySeparator(path[path.Length - 1]);
-
 
         public static bool IsDirectorySeparator(char c) => Array.IndexOf(DirectorySeparators, c) != -1;
 
@@ -92,6 +92,9 @@ namespace Microsoft.Python.Core.IO {
         /// ensures that the result closest to <paramref name="root"/> is
         /// returned first.
         /// </summary>
+        /// <param name="fileSystem">
+        /// File system
+        /// </param>
         /// <param name="root">
         /// Directory to start searching.
         /// </param>
@@ -108,18 +111,18 @@ namespace Microsoft.Python.Core.IO {
         /// The path to the file if found, including <paramref name="root"/>;
         /// otherwise, null.
         /// </returns>
-        public static string FindFile(
+        public static string FindFile(IFileSystem fileSystem,
             string root,
             string file,
             int depthLimit = 2,
             IEnumerable<string> firstCheck = null
         ) {
-            if (!Directory.Exists(root)) {
+            if (!fileSystem.DirectoryExists(root)) {
                 return null;
             }
 
             var candidate = Path.Combine(root, file);
-            if (File.Exists(candidate)) {
+            if (fileSystem.FileExists(candidate)) {
                 return candidate;
             }
             if (firstCheck != null) {
@@ -138,13 +141,14 @@ namespace Microsoft.Python.Core.IO {
             while (dirQueue.Any()) {
                 var dirDepth = dirQueue.Dequeue();
                 var dir = dirDepth.Key;
-                var result = EnumerateFiles(dir, file, recurse: false).FirstOrDefault();
+                var result = EnumerateFiles(fileSystem, dir, file, recurse: false).FirstOrDefault();
                 if (result != null) {
-                    return result;
+                    return result.FullName;
                 }
+
                 var depth = dirDepth.Value;
                 if (depth < depthLimit) {
-                    foreach (var subDir in EnumerateDirectories(dir, recurse: false)) {
+                    foreach (var subDir in EnumerateDirectories(fileSystem, dir, recurse: false)) {
                         dirQueue.Enqueue(new KeyValuePair<string, int>(subDir, depth + 1));
                     }
                 }
@@ -158,22 +162,21 @@ namespace Microsoft.Python.Core.IO {
         /// contrast with Directory.GetDirectories, which will crash without
         /// returning any subdirectories at all).
         /// </summary>
+        /// <param name="fileSystem"></param>
         /// <param name="root">
-        /// Directory to enumerate under. This is not returned from this
-        /// function.
+        ///     Directory to enumerate under. This is not returned from this
+        ///     function.
         /// </param>
         /// <param name="recurse">
-        /// <c>true</c> to return subdirectories of subdirectories.
+        ///     <c>true</c> to return subdirectories of subdirectories.
         /// </param>
         /// <param name="fullPaths">
-        /// <c>true</c> to return full paths for all subdirectories. Otherwise,
-        /// the relative path from <paramref name="root"/> is returned.
+        ///     <c>true</c> to return full paths for all subdirectories. Otherwise,
+        ///     the relative path from <paramref name="root"/> is returned.
         /// </param>
-        public static IEnumerable<string> EnumerateDirectories(
-            string root,
+        public static IEnumerable<string> EnumerateDirectories(IFileSystem fileSystem, string root,
             bool recurse = true,
-            bool fullPaths = true
-        ) {
+            bool fullPaths = true) {
             var queue = new Queue<string>();
             root = EnsureEndSeparator(root);
             queue.Enqueue(root);
@@ -182,12 +185,17 @@ namespace Microsoft.Python.Core.IO {
                 var path = queue.Dequeue();
                 path = EnsureEndSeparator(path);
 
+                if (!fileSystem.DirectoryExists(path)) {
+                    continue;
+                }
+
                 IEnumerable<string> dirs = null;
                 try {
-                    dirs = Directory.GetDirectories(path);
+                    dirs = fileSystem.GetDirectories(path);
                 } catch (UnauthorizedAccessException) {
                 } catch (IOException) {
                 }
+
                 if (dirs == null) {
                     continue;
                 }
@@ -256,6 +264,9 @@ namespace Microsoft.Python.Core.IO {
         /// with Directory.GetFiles, which will crash without returning any
         /// files at all).
         /// </summary>
+        /// <param name="fileSystem">
+        /// File system.
+        /// </param>
         /// <param name="root">
         /// Directory to enumerate.
         /// </param>
@@ -269,49 +280,114 @@ namespace Microsoft.Python.Core.IO {
         /// <c>true</c> to return full paths for all subdirectories. Otherwise,
         /// the relative path from <paramref name="root"/> is returned.
         /// </param>
-        public static IEnumerable<string> EnumerateFiles(
-            string root,
-            string pattern = "*",
-            bool recurse = true,
-            bool fullPaths = true
-        ) {
+        public static IEnumerable<IFileInfo> EnumerateFiles(IFileSystem fileSystem, string root, string pattern = "*", bool recurse = true) {
             root = EnsureEndSeparator(root);
 
             var dirs = Enumerable.Repeat(root, 1);
             if (recurse) {
-                dirs = dirs.Concat(EnumerateDirectories(root, true, false));
+                dirs = dirs.Concat(EnumerateDirectories(fileSystem, root, true, false));
             }
 
             foreach (var dir in dirs) {
-                var fullDir = Path.IsPathRooted(dir) ? dir : (root + dir);
-                var dirPrefix = "";
-                if (!Path.IsPathRooted(dir)) {
-                    dirPrefix = EnsureEndSeparator(dir);
-                }
-
-
-                IEnumerable<string> files = null;
+                var fullDir = Path.IsPathRooted(dir) ? dir : root + dir;
+                IFileInfo[] files = null;
                 try {
-                    if (Directory.Exists(fullDir)) {
-                        files = Directory.GetFiles(fullDir, pattern);
+                    if (fileSystem.DirectoryExists(fullDir)) {
+                        files = fileSystem.GetDirectoryInfo(fullDir)
+                            .EnumerateFileSystemInfos(pattern, SearchOption.TopDirectoryOnly)
+                            .Where(f => !f.Attributes.HasFlag(FileAttributes.Directory))
+                            .OfType<IFileInfo>()
+                            .ToArray();
                     }
                 } catch (UnauthorizedAccessException) {
                 } catch (IOException) {
                 }
+
                 if (files == null) {
                     continue;
                 }
 
                 foreach (var f in files) {
-                    if (fullPaths) {
-                        yield return f;
-                    } else {
-                        var relPath = dirPrefix + GetFileName(f);
-                        if (File.Exists(root + relPath)) {
-                            yield return relPath;
-                        }
-                    }
+                    yield return f;
                 }
+            }
+        }
+
+        public static bool TryGetZipFilePath(string filePath, out string zipPath, out string relativeZipPath) {
+            zipPath = string.Empty;
+            relativeZipPath = string.Empty;
+            var workingPath = filePath;
+
+            // Filepath doesn't have zip or egg in it, bail 
+            if (!filePath.Contains(".zip") && !filePath.Contains(".egg")) {
+                return false;
+            }
+
+            while (!string.IsNullOrEmpty(workingPath)) {
+                if (IsZipFile(workingPath, out zipPath)) {
+                    // File path is '..\\test\\test.zip\\test\\a.py'
+                    // Working path is '..\\test\\test.zip'
+                    // Relative path in zip file becomes 'test/a.py'
+                    relativeZipPath = filePath.Substring(workingPath.Length);
+
+                    // According to https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT, zip files must have forward slashes
+                    foreach(var separator in DirectorySeparators) {
+                        relativeZipPath = relativeZipPath.Replace(separator, '/');
+                    }
+                    return true;
+                }
+                // \\test\\test.zip => \\test\\
+                workingPath = GetParent(workingPath);
+            }
+
+            // Filepath had .zip or .egg in it but no zip or egg files
+            // e.g /tmp/tmp.zip.txt
+            return false;
+        }
+
+        /// <summary>
+        /// Returns whether the given file path is a path to a zip (or egg) file
+        /// The path can be of the form ..\\test.zip or ..\\test.zip\\
+        /// </summary>
+        public static bool IsZipFile(string rawZipPath, out string zipPath) {
+            var path = NormalizePathAndTrim(rawZipPath);
+            var extension = Path.GetExtension(path);
+            switch (extension) {
+                case ".zip":
+                case ".egg":
+                    zipPath = path;
+                    return true;
+                default:
+                    zipPath = string.Empty;
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Given the path to the zip file and the relative path to a file inside the zip,
+        /// returns the contents of the zip entry
+        /// e.g
+        /// test.zip
+        ///     a.py
+        ///     b.py
+        /// Can get the contents of a.py by passing in "test.zip" and "a.py"
+        /// </summary>
+        public static string GetZipContent(string zipPath, string relativeZipPath) {
+            using (var zip = ZipFile.OpenRead(zipPath)) {
+                var zipFile = zip.GetEntry(relativeZipPath);
+                // Could not open zip, bail
+                if (zipFile == null) {
+                    return null;
+                }
+                using (var reader = new StreamReader(zipFile.Open())) {
+                    return reader.ReadToEnd();
+                }
+            }
+        }
+
+        public static IEnumerable<ZipArchiveEntry> EnumerateZip(string root) {
+            using (var zip = ZipFile.OpenRead(root)) {
+                return zip.Entries.ToList();
             }
         }
 
@@ -335,71 +411,6 @@ namespace Microsoft.Python.Core.IO {
                 Thread.Sleep(10);
             }
             return !File.Exists(path);
-        }
-
-        /// <summary>
-        /// Recursively deletes a directory, making multiple attempts
-        /// and suppressing any IO-related errors.
-        /// </summary>
-        /// <param name="path">The full path of the directory to delete.</param>
-        /// <returns>True if the directory was successfully deleted.</returns>
-        public static bool DeleteDirectory(string path) {
-            for (var retries = 2; retries > 0; --retries) {
-                try {
-                    Directory.Delete(path, true);
-                    return true;
-                } catch (UnauthorizedAccessException) {
-                } catch (IOException) {
-                }
-            }
-
-            // Regular delete failed, so let's start removing the contents ourselves
-            var subdirs = EnumerateDirectories(path).OrderByDescending(p => p.Length).ToArray();
-            foreach (var dir in subdirs) {
-                foreach (var f in EnumerateFiles(dir, recurse: false).ToArray()) {
-                    DeleteFile(f);
-                }
-
-                try {
-                    Directory.Delete(dir, true);
-                } catch (UnauthorizedAccessException) {
-                } catch (IOException) {
-                }
-            }
-
-            // If we get to this point and the directory still exists, there's
-            // likely nothing we can do.
-            return !Directory.Exists(path);
-        }
-
-        public static FileStream OpenWithRetry(string file, FileMode mode, FileAccess access, FileShare share) {
-            // Retry for up to one second
-            var create = mode != FileMode.Open;
-            for (var retries = 100; retries > 0; --retries) {
-                try {
-                    return new FileStream(file, mode, access, share);
-                } catch (FileNotFoundException) when (!create) {
-                    return null;
-                } catch (DirectoryNotFoundException) when (!create) {
-                    return null;
-                } catch (UnauthorizedAccessException) {
-                    Thread.Sleep(10);
-                } catch (IOException) {
-                    if (create) {
-                        var dir = Path.GetDirectoryName(file);
-                        try {
-                            Directory.CreateDirectory(dir);
-                        } catch (IOException) {
-                            // Cannot create directory for DB, so just bail out
-                            return null;
-                        }
-                    }
-                    Thread.Sleep(10);
-                } catch (NotSupportedException) {
-                    return null;
-                }
-            }
-            return null;
         }
 
         public static bool IsNormalizedPath(string path) {

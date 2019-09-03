@@ -16,23 +16,25 @@
 using Microsoft.Python.Core.Collections;
 
 namespace Microsoft.Python.Analysis.Core.DependencyResolution {
-    public class ModuleImport : IImportSearchResult, IImportChildrenSource {
+    public class ModuleImport : IImportChildrenSource {
         private readonly IImportChildrenSource _childrenSource;
 
         public string Name { get; }
         public string FullName { get; }
         public string RootPath { get; }
         public string ModulePath { get; }
+        public long ModuleFileSize { get; }
         public bool IsCompiled { get; }
         public bool IsLibrary { get; }
         public bool IsBuiltin => IsCompiled && ModulePath == null;
 
-        public ModuleImport(IImportChildrenSource childrenSource, string name, string fullName, string rootPath, string modulePath, bool isCompiled, bool isLibrary) {
+        public ModuleImport(IImportChildrenSource childrenSource, string name, string fullName, string rootPath, string modulePath, long moduleFileSize, bool isCompiled, bool isLibrary) {
             _childrenSource = childrenSource;
             Name = name;
             FullName = fullName;
             RootPath = rootPath;
             ModulePath = modulePath;
+            ModuleFileSize = moduleFileSize;
             IsCompiled = isCompiled;
             IsLibrary = isLibrary;
         }

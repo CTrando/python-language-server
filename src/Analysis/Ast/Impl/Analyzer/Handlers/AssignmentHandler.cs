@@ -13,6 +13,8 @@
 // See the Apache Version 2.0 License for specific language governing
 // permissions and limitations under the License.
 
+using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Microsoft.Python.Analysis.Types;
@@ -30,10 +32,12 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
             }
 
             var value = Eval.GetValueFromExpression(node.Right) ?? Eval.UnknownType;
+            // Filter out parenthesis expression in assignment becaues it makes no difference
+            var lhs = node.Left.Select(s => s.RemoveParenthesis());
             // Check PEP hint first
             var valueType = Eval.GetTypeFromPepHint(node.Right);
             if (valueType != null) {
-                HandleTypedVariable(valueType, value, node.Left.FirstOrDefault());
+                HandleTypedVariable(valueType, value, lhs.FirstOrDefault());
                 return;
             }
 
@@ -44,39 +48,47 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
                 value = Eval.UnknownType;
             }
 
-            if (node.Left.FirstOrDefault() is SequenceExpression seq) {
-                // Tuple = Tuple. Transfer values.
-                var seqHandler = new SequenceExpressionHandler(Walker);
-                seqHandler.HandleAssignment(seq.Items, node.Right, value);
+            foreach (var expr in lhs) {
+                switch (expr) {
+                    case SequenceExpression seq:
+                        // Tuple = Tuple. Transfer values.
+                        var seqHandler = new SequenceExpressionHandler(Walker);
+                        seqHandler.HandleAssignment(seq, node.Right, value);
+                        break;
+                    case ExpressionWithAnnotation annExpr:
+                        HandleAnnotatedExpression(annExpr, value);
+                        break;
+                    case NameExpression nameExpr:
+                        HandleNameExpression(nameExpr, value);
+                        break;
+                    case MemberExpression memberExpr:
+                        TryHandleClassVariable(memberExpr, value);
+                        break;
+                }
+            }
+        }
+
+        private bool IsValidAssignment(string name, Location loc) => !Eval.GetInScope(name).IsDeclaredAfter(loc);
+
+        private void HandleNameExpression(NameExpression ne, IMember value) {
+            if (Eval.CurrentScope.NonLocals[ne.Name] != null) {
+                Eval.LookupNameInScopes(ne.Name, out var scope, LookupOptions.Nonlocal);
+                scope?.Variables[ne.Name].Assign(value, Eval.GetLocationOfName(ne));
                 return;
             }
 
-            // Process annotations, if any.
-            foreach (var expr in node.Left.OfType<ExpressionWithAnnotation>()) {
-                // x: List[str] = [...]
-                HandleAnnotatedExpression(expr, value);
+            if (Eval.CurrentScope.Globals[ne.Name] != null) {
+                Eval.LookupNameInScopes(ne.Name, out var scope, LookupOptions.Global);
+                scope?.Variables[ne.Name].Assign(value, Eval.GetLocationOfName(ne));
+                return;
             }
 
-            foreach (var ne in node.Left.OfType<NameExpression>()) {
-                if (Eval.CurrentScope.NonLocals[ne.Name] != null) {
-                    Eval.LookupNameInScopes(ne.Name, out var scope, LookupOptions.Nonlocal);
-                    scope?.Variables[ne.Name].Assign(value, Eval.GetLocationOfName(ne));
-                    continue;
-                }
-
-                if (Eval.CurrentScope.Globals[ne.Name] != null) {
-                    Eval.LookupNameInScopes(ne.Name, out var scope, LookupOptions.Global);
-                    scope?.Variables[ne.Name].Assign(value, Eval.GetLocationOfName(ne));
-                    continue;
-                }
-
-                var source = value.IsGeneric() ? VariableSource.Generic : VariableSource.Declaration;
-                Eval.DeclareVariable(ne.Name, value ?? Module.Interpreter.UnknownType, source, Eval.GetLocationOfName(ne));
+            var source = value.IsGeneric() ? VariableSource.Generic : VariableSource.Declaration;
+            var location = Eval.GetLocationOfName(ne);
+            if (IsValidAssignment(ne.Name, location)) {
+                Eval.DeclareVariable(ne.Name, value ?? Module.Interpreter.UnknownType, source, location);
             }
-
-            TryHandleClassVariable(node, value);
         }
-
         public void HandleAnnotatedExpression(ExpressionWithAnnotation expr, IMember value) {
             if (expr?.Annotation == null) {
                 return;
@@ -90,14 +102,13 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
             HandleTypedVariable(variableType, value, expr.Expression);
         }
 
-        private void TryHandleClassVariable(AssignmentStatement node, IMember value) {
-            var mex = node.Left.OfType<MemberExpression>().FirstOrDefault();
+        private void TryHandleClassVariable(MemberExpression mex, IMember value) {
             if (!string.IsNullOrEmpty(mex?.Name) && mex.Target is NameExpression nex && nex.Name.EqualsOrdinal("self")) {
-                var m = Eval.LookupNameInScopes(nex.Name, out var scope, LookupOptions.Local);
+                var m = Eval.LookupNameInScopes(nex.Name, out _, LookupOptions.Local);
                 var cls = m.GetPythonType<IPythonClassType>();
                 if (cls != null) {
                     using (Eval.OpenScope(Eval.Module, cls.ClassDefinition, out _)) {
-                        Eval.DeclareVariable(mex.Name, value, VariableSource.Declaration, Eval.GetLocationOfName(mex), true);
+                        Eval.DeclareVariable(mex.Name, value, VariableSource.Declaration, Eval.GetLocationOfName(mex));
                     }
                 }
             }
@@ -116,7 +127,8 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
                     instance = value;
                 }
             }
-            instance = instance ?? variableType?.CreateInstance(variableType.Name, ArgumentSet.Empty(expr, Eval)) ?? Eval.UnknownType;
+            var args = ArgumentSet.Empty(expr, Eval);
+            instance = instance ?? variableType?.CreateInstance(args) ?? Eval.UnknownType.CreateInstance();
 
             if (expr is NameExpression ne) {
                 Eval.DeclareVariable(ne.Name, instance, VariableSource.Declaration, ne);

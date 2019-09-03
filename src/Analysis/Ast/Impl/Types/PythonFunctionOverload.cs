@@ -82,7 +82,7 @@ namespace Microsoft.Python.Analysis.Types {
             if (!_fromAnnotation && !currentType.Equals(valueType)) {
                 var type = PythonUnionType.Combine(currentType, valueType);
                 // Track instance vs type info.
-                StaticReturnValue = value is IPythonInstance ? new PythonInstance(type) : (IMember)type;
+                StaticReturnValue = value is IPythonInstance ? type.CreateInstance() : (IMember)type;
             }
         }
 
@@ -107,6 +107,12 @@ namespace Microsoft.Python.Analysis.Types {
                     return returnType.GetPythonType().Name;
                 }
             }
+            
+            // Use annotation value if it is there
+            if(_fromAnnotation && !StaticReturnValue.IsUnknown()) {
+                return StaticReturnValue.GetPythonType().Name;
+            }
+
             return _returnDocumentation;
         }
 
@@ -140,7 +146,7 @@ namespace Microsoft.Python.Analysis.Types {
                     break;
 
                 case IGenericTypeParameter gtd1 when selfClassType != null:
-                    return CreateSpecificReturnFromTypeVar(selfClassType, gtd1); // -> _T
+                    return CreateSpecificReturnFromTypeVar(selfClassType, args, gtd1); // -> _T
 
                 case IGenericTypeParameter gtd2 when args != null: // -> T on standalone function.
                     return args.Arguments.FirstOrDefault(a => gtd2.Equals(a.Type))?.Value as IMember;
@@ -165,16 +171,17 @@ namespace Microsoft.Python.Analysis.Types {
             }
 
             if (typeArgs != null) {
-                var specificReturnValue = returnClassType.CreateSpecificType(new ArgumentSet(typeArgs, args?.Expression, args?.Eval));
-                return new PythonInstance(specificReturnValue);
+                var newArgs = new ArgumentSet(typeArgs, args?.Expression, args?.Eval);
+                var specificReturnValue = returnClassType.CreateSpecificType(newArgs);
+                return specificReturnValue.CreateInstance(newArgs);
             }
 
             return null;
         }
 
-        private IMember CreateSpecificReturnFromTypeVar(IPythonClassType selfClassType, IGenericTypeParameter returnType) {
-            if (selfClassType.GenericParameters.TryGetValue(returnType, out var specificType)) {
-                return new PythonInstance(specificType);
+        private IMember CreateSpecificReturnFromTypeVar(IPythonClassType selfClassType, IArgumentSet args, IGenericTypeParameter returnType) {
+            if (selfClassType.GetSpecificType(returnType, out var specificType)) {
+                return specificType.CreateInstance(args);
             }
 
             // Find first base class type in which function was declared
@@ -184,8 +191,19 @@ namespace Microsoft.Python.Analysis.Types {
                 .FirstOrDefault(b => b.GetMember(ClassMember.Name) != null && b.GenericParameters.ContainsKey(returnType));
 
             // Try and infer return value from base class
-            if (baseType != null && baseType.GenericParameters.TryGetValue(returnType, out specificType)) {
-                return new PythonInstance(specificType);
+            if (baseType != null && baseType.GetSpecificType(returnType, out specificType)) {
+                return specificType.CreateInstance(args);
+            }
+
+            // Try getting type from passed in arguments
+            var typeFromArgs = args?.Arguments.FirstOrDefault(a => returnType.Equals(a.Type))?.Value as IMember;
+            if (typeFromArgs != null) {
+                return typeFromArgs;
+            }
+
+            // Try getting the type from the type parameter bound
+            if (returnType.Bound != null) {
+                return returnType.Bound.CreateInstance(args);
             }
 
             // Try returning the constraint

@@ -38,8 +38,21 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
                     context = context.IsUnknown() ? contextManager : context;
                 }
 
-                if (item.Variable is NameExpression nex && !string.IsNullOrEmpty(nex.Name)) {
-                    Eval.DeclareVariable(nex.Name, context, VariableSource.Declaration, item);
+                var sequenceHandler = new SequenceExpressionHandler(Walker);
+                switch (item.Variable) {
+                    // Handle with Test() as a
+                    case NameExpression nameExpr when !string.IsNullOrEmpty(nameExpr.Name):
+                        Eval.DeclareVariable(nameExpr.Name, context, VariableSource.Declaration, item);
+                        break;
+                    // Handle with Test() as (a)
+                    case ParenthesisExpression parExpr when parExpr.Expression is NameExpression nameExpr && !string.IsNullOrEmpty(nameExpr.Name):
+                        Eval.DeclareVariable(nameExpr.Name, context, VariableSource.Declaration, item);
+                        break;
+                    // Handle with Test() as (a, b) 
+                    // Single element list [a] is a sequence expression so also handled here
+                    case SequenceExpression seqExpr:
+                        SequenceExpressionHandler.Assign(seqExpr, context, Eval);
+                        break;
                 }
             }
         }

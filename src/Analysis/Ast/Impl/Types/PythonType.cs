@@ -34,18 +34,13 @@ namespace Microsoft.Python.Analysis.Types {
         private Dictionary<string, IMember> WritableMembers =>
             _members ?? (_members = new Dictionary<string, IMember>());
 
-        public PythonType(
-            string name,
-            Location location,
-            string documentation,
-            BuiltinTypeId typeId = BuiltinTypeId.Unknown
-        ) : this(name, location, typeId) {
+        public PythonType(string name, Location location, string documentation, BuiltinTypeId typeId = BuiltinTypeId.Unknown) 
+            : this(name, location, typeId) {
             BaseName = name ?? throw new ArgumentNullException(nameof(name));
             Documentation = documentation;
         }
 
         private PythonType(string name, Location location, BuiltinTypeId typeId) : base(location) {
-            Check.ArgumentNotNull(nameof(location), location.Module);
             BaseName = name ?? throw new ArgumentNullException(nameof(name));
             _typeId = typeId;
         }
@@ -78,7 +73,7 @@ namespace Microsoft.Python.Analysis.Types {
         /// <param name="typeName">Name of the type. Used in specialization scenarios
         /// where constructor may want to create specialized type.</param>
         /// <param name="args">Any custom arguments required to create the instance.</param>
-        public virtual IMember CreateInstance(string typeName, IArgumentSet args) => new PythonInstance(this);
+        public virtual IPythonInstance CreateInstance(IArgumentSet args) => new PythonInstance(this);
 
         /// <summary>
         /// Invokes method or property on the specified instance.
@@ -115,10 +110,16 @@ namespace Microsoft.Python.Analysis.Types {
         internal void AddMembers(IEnumerable<IVariable> variables, bool overwrite) {
             lock (_lock) {
                 if (!_readonly) {
-                    foreach (var v in variables.Where(m => overwrite || !Members.ContainsKey(m.Name))) {
-                        // If variable holds function or a class, use value as member. 
-                        // If it holds an instance, use the variable itself (i.e. it is a data member).
-                        WritableMembers[v.Name] = v.Value;
+                    foreach (var v in variables.OfType<Variable>()) {
+                        var hasMember = Members.ContainsKey(v.Name);
+                        if (overwrite || !hasMember) {
+                            // If variable holds function or a class, use value as member. 
+                            // If it holds an instance, use the variable itself (i.e. it is a data member).
+                            WritableMembers[v.Name] = v.Value;
+                        }
+                        if (hasMember) {
+                            v.IsClassMember = true;
+                        }
                     }
                 }
             }

@@ -16,6 +16,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Microsoft.Python.Analysis.Diagnostics;
 using Microsoft.Python.Analysis.Tests.FluentAssertions;
 using Microsoft.Python.Core;
 using Microsoft.Python.Parsing.Tests;
@@ -45,9 +46,33 @@ T = NewType(5, int)
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
-            diagnostic.SourceSpan.Should().Be(4, 5, 4, 20);
-            diagnostic.ErrorCode.Should().Be(Diagnostics.ErrorCodes.TypingNewTypeArguments);
-            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgNotString.FormatInvariant("int"));
+            diagnostic.SourceSpan.Should().Be(4, 13, 4, 14);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.TypingNewTypeArguments);
+            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgument);
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task NewTypeEmptyStringFirstArg() {
+            const string code = @"
+from typing import NewType
+
+T = NewType('', int)
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task NewTypeUnknownFirstArg() {
+            const string code = @"
+from typing import NewType
+
+x = Y()
+
+T = NewType(x, int)
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().BeEmpty();
         }
 
         [DataRow("float", "float")]
@@ -55,7 +80,7 @@ T = NewType(5, int)
         [DataRow("complex", "str")]
         [DataTestMethod, Priority(0)]
         public async Task DifferentTypesFirstArg(string nameType, string type) {
-            string code = $@"
+            var code = $@"
 from typing import NewType
 
 T = NewType({nameType}(10), {type})
@@ -65,13 +90,13 @@ T = NewType({nameType}(10), {type})
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
-            diagnostic.ErrorCode.Should().Be(Diagnostics.ErrorCodes.TypingNewTypeArguments);
-            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgNotString.FormatInvariant(nameType));
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.TypingNewTypeArguments);
+            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgument);
         }
 
         [TestMethod, Priority(0)]
         public async Task ObjectFirstArg() {
-            string code = $@"
+            var code = $@"
 from typing import NewType
 
 class X:
@@ -86,14 +111,30 @@ T = NewType(h, int)
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
-            diagnostic.SourceSpan.Should().Be(10, 5, 10, 20);
-            diagnostic.ErrorCode.Should().Be(Diagnostics.ErrorCodes.TypingNewTypeArguments);
-            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgNotString.FormatInvariant("X"));
+            diagnostic.SourceSpan.Should().Be(10, 13, 10, 14);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.TypingNewTypeArguments);
+            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgument);
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task TypeFirstArg() {
+            var code = $@"
+from typing import NewType
+
+T = NewType(float, int)
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().HaveCount(1);
+
+            var diagnostic = analysis.Diagnostics.ElementAt(0);
+            diagnostic.SourceSpan.Should().Be(4, 13, 4, 18);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.TypingNewTypeArguments);
+            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgument);
         }
 
         [TestMethod, Priority(0)]
         public async Task GenericFirstArg() {
-            string code = $@"
+            var code = $@"
 from typing import NewType, Generic, TypeVar
 
 T = TypeVar('T', str, int)
@@ -109,22 +150,65 @@ T = NewType(h, int)
             analysis.Diagnostics.Should().HaveCount(1);
 
             var diagnostic = analysis.Diagnostics.ElementAt(0);
-            diagnostic.SourceSpan.Should().Be(11, 5, 11, 20);
-            diagnostic.ErrorCode.Should().Be(Diagnostics.ErrorCodes.TypingNewTypeArguments);
-            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgNotString.FormatInvariant("X[int]"));
+            diagnostic.SourceSpan.Should().Be(11, 13, 11, 14);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.TypingNewTypeArguments);
+            diagnostic.Message.Should().Be(Resources.NewTypeFirstArgument);
         }
 
         [DataRow("test", "float")]
         [DataRow("testing", "int")]
         [DataTestMethod, Priority(0)]
         public async Task NoDiagnosticOnStringFirstArg(string name, string type) {
-            string code = $@"
+            var code = $@"
 from typing import NewType
 
 T = NewType('{name}', {type})
 ";
             var analysis = await GetAnalysisAsync(code);
-            analysis.Diagnostics.Should().HaveCount(0);
+            analysis.Diagnostics.Should().BeEmpty();
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task NewTypeWrongNumArgs() {
+            var code = $@"
+from typing import NewType
+
+Y = NewType()
+Z = NewType('str', int, float)
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().HaveCount(3);
+
+            var diagnostic = analysis.Diagnostics.ElementAt(0);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.ParameterMissing);
+            diagnostic.Message.Should().Be(Resources.Analysis_ParameterMissing.FormatInvariant("name"));
+            diagnostic.SourceSpan.Should().Be(4, 5, 4, 12);
+
+            diagnostic = analysis.Diagnostics.ElementAt(1);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.ParameterMissing);
+            diagnostic.Message.Should().Be(Resources.Analysis_ParameterMissing.FormatInvariant("tp"));
+            diagnostic.SourceSpan.Should().Be(4, 5, 4, 12);
+
+            diagnostic = analysis.Diagnostics.ElementAt(2);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.TooManyFunctionArguments);
+            diagnostic.Message.Should().Be(Resources.Analysis_TooManyFunctionArguments);
+            diagnostic.SourceSpan.Should().Be(5, 5, 5, 12);
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task NewTypeOneArg() {
+            var code = $@"
+from typing import NewType
+
+Y = NewType('str')
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Diagnostics.Should().HaveCount(1);
+
+            var diagnostic = analysis.Diagnostics.ElementAt(0);
+            diagnostic.ErrorCode.Should().Be(ErrorCodes.ParameterMissing);
+            diagnostic.Message.Should().Be(Resources.Analysis_ParameterMissing.FormatInvariant("tp"));
+            diagnostic.SourceSpan.Should().Be(4, 5, 4, 12);
         }
     }
 }

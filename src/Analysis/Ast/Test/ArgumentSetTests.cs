@@ -228,9 +228,9 @@ NewType('T', int)
 ";
             var argSet = await GetArgSetAsync(code, funcName: "NewType");
             argSet.Arguments.Should().HaveCount(2);
-            argSet.Arguments[0].Name.Should().Be("arg0");
+            argSet.Arguments[0].Name.Should().Be("name");
             argSet.Arguments[0].ValueExpression.Should().BeOfType<ConstantExpression>().Which.Value.Should().Be("T");
-            argSet.Arguments[1].Name.Should().Be("arg1");
+            argSet.Arguments[1].Name.Should().Be("tp");
             argSet.Arguments[1].ValueExpression.Should().BeOfType<NameExpression>().Which.Name.Should().Be("int");
 
             argSet.ListArgument.Should().BeNull();
@@ -456,7 +456,7 @@ def func(a = A()): ...
             var cls = analysis.Should().HaveClass(className).Which;
             var f = cls.Should().HaveMethod(funcName).Which;
             var call = GetCall(analysis.Ast);
-            return new ArgumentSet(f, 0, new PythonInstance(cls), call, analysis.ExpressionEvaluator);
+            return new ArgumentSet(f, 0, cls, call, analysis.ExpressionEvaluator);
         }
 
         private CallExpression GetCall(PythonAst ast) {

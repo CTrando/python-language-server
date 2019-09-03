@@ -17,81 +17,60 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using Microsoft.Python.Analysis.Caching;
 using Microsoft.Python.Analysis.Core.DependencyResolution;
 using Microsoft.Python.Analysis.Core.Interpreter;
-using Microsoft.Python.Analysis.Documents;
 using Microsoft.Python.Analysis.Types;
 using Microsoft.Python.Core;
+using Microsoft.Python.Core.Collections;
 using Microsoft.Python.Core.IO;
 using Microsoft.Python.Core.Logging;
 using Microsoft.Python.Core.Services;
 
 namespace Microsoft.Python.Analysis.Modules.Resolution {
     internal abstract class ModuleResolutionBase {
-        protected readonly IServiceContainer _services;
-        protected readonly IPythonInterpreter _interpreter;
-        protected readonly IFileSystem _fs;
-        protected readonly ILogger _log;
-        protected readonly IUIService _ui;
-        protected readonly bool _requireInitPy;
+        protected IServiceContainer Services { get; }
+        protected IFileSystem FileSystem { get; }
+        protected IPythonInterpreter Interpreter { get; }
+        protected ILogger Log { get; }
 
         protected ConcurrentDictionary<string, ModuleRef> Modules { get; } = new ConcurrentDictionary<string, ModuleRef>();
         protected PathResolver PathResolver { get; set; }
 
-        protected InterpreterConfiguration Configuration => _interpreter.Configuration;
+        protected InterpreterConfiguration Configuration => Interpreter.Configuration;
+
+        public string Root { get; }
+        public IStubCache StubCache { get; }
 
         protected ModuleResolutionBase(string root, IServiceContainer services) {
             Root = root;
+            Services = services;
+            FileSystem = services.GetService<IFileSystem>();
 
-            _services = services;
-            _interpreter = services.GetService<IPythonInterpreter>();
-            _fs = services.GetService<IFileSystem>();
-            _log = services.GetService<ILogger>();
-            _ui = services.GetService<IUIService>();
-
-            _requireInitPy = ModulePath.PythonVersionRequiresInitPyFiles(_interpreter.Configuration.Version);
+            Interpreter = services.GetService<IPythonInterpreter>();
+            StubCache = services.GetService<IStubCache>();
+            Log = services.GetService<ILogger>();
         }
 
-        public string Root { get; protected set; }
-        public IEnumerable<string> InterpreterPaths { get; protected set; } = Enumerable.Empty<string>();
-
-        public IModuleCache ModuleCache { get; protected set; }
-        public string BuiltinModuleName => BuiltinTypeId.Unknown.GetModuleName(_interpreter.LanguageVersion);
+        public ImmutableArray<string> InterpreterPaths { get; protected set; } = ImmutableArray<string>.Empty;
+        public ImmutableArray<string> UserPaths { get; protected set; } = ImmutableArray<string>.Empty;
 
         /// <summary>
         /// Path resolver providing file resolution in module imports.
         /// </summary>
         public PathResolverSnapshot CurrentPathResolver => PathResolver.CurrentSnapshot;
 
-        /// <summary>
-        /// Builtins module.
-        /// </summary>
-        public IBuiltinsPythonModule BuiltinsModule { get; protected set; }
-
         protected abstract IPythonModule CreateModule(string name);
 
-        public IReadOnlyCollection<string> GetPackagesFromDirectory(string searchPath, CancellationToken cancellationToken) {
-            return ModulePath.GetModulesInPath(
-                searchPath,
-                recurse: false,
-                includePackages: true,
-                requireInitPy: _requireInitPy
-            ).Select(mp => mp.ModuleName).Where(n => !string.IsNullOrEmpty(n)).TakeWhile(_ => !cancellationToken.IsCancellationRequested).ToList();
-        }
-
-        public IStubCache StubCache { get; protected set; }
-
         public IPythonModule GetImportedModule(string name) 
-            => Modules.TryGetValue(name, out var moduleRef) ? moduleRef.Value : _interpreter.ModuleResolution.GetSpecializedModule(name);
+            => Modules.TryGetValue(name, out var moduleRef) ? moduleRef.Value : Interpreter.ModuleResolution.GetSpecializedModule(name);
 
         public IPythonModule GetOrLoadModule(string name) {
             if (Modules.TryGetValue(name, out var moduleRef)) {
                 return moduleRef.GetOrCreate(name, this);
             }
 
-            var module = _interpreter.ModuleResolution.GetSpecializedModule(name);
+            var module = Interpreter.ModuleResolution.GetSpecializedModule(name);
             if (module != null) {
                 return module;
             }
@@ -100,13 +79,10 @@ namespace Microsoft.Python.Analysis.Modules.Resolution {
             return moduleRef.GetOrCreate(name, this);
         }
 
-        public bool TryAddModulePath(in string path, in bool allowNonRooted, out string fullModuleName)
-            => PathResolver.TryAddModulePath(path, allowNonRooted, out fullModuleName);
-
         public ModulePath FindModule(string filePath) {
             var bestLibraryPath = string.Empty;
 
-            foreach (var p in Configuration.SearchPaths) {
+            foreach (var p in InterpreterPaths.Concat(UserPaths)) {
                 if (PathEqualityComparer.Instance.StartsWith(filePath, p)) {
                     if (p.Length > bestLibraryPath.Length) {
                         bestLibraryPath = p;
@@ -117,11 +93,24 @@ namespace Microsoft.Python.Analysis.Modules.Resolution {
         }
 
         protected void ReloadModulePaths(in IEnumerable<string> rootPaths) {
-            foreach (var modulePath in rootPaths.Where(Directory.Exists).SelectMany(p => PathUtils.EnumerateFiles(p))) {
-                PathResolver.TryAddModulePath(modulePath, false, out _);
+            foreach (var root in rootPaths) {
+                foreach (var moduleFile in PathUtils.EnumerateFiles(FileSystem, root)) {
+                    PathResolver.TryAddModulePath(moduleFile.FullName, moduleFile.Length, false, out _);
+                }
+
+                if (PathUtils.TryGetZipFilePath(root, out var zipFilePath, out var _) && File.Exists(zipFilePath)) {
+                    foreach (var moduleFile in PathUtils.EnumerateZip(zipFilePath)) {
+                        if (!PathUtils.PathStartsWith(moduleFile.FullName, "EGG-INFO")) {
+                            PathResolver.TryAddModulePath(
+                                Path.Combine(zipFilePath,
+                                PathUtils.NormalizePath(moduleFile.FullName)),
+                                moduleFile.Length, false, out _
+                            );
+                        }
+                    }
+                }
             }
         }
-
         protected class ModuleRef {
             private readonly object _syncObj = new object();
             private IPythonModule _module;

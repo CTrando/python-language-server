@@ -632,7 +632,7 @@ class Test():
             sw.Stop();
             // Desktop: product time is typically less few seconds second.
             // Test run time: typically ~ 20 sec.
-            sw.ElapsedMilliseconds.Should().BeLessThan(60000); 
+            sw.ElapsedMilliseconds.Should().BeLessThan(60000);
         }
 
         [TestMethod, Priority(0)]
@@ -652,12 +652,132 @@ a = x().func()
         }
 
         [TestMethod, Priority(0)]
+        public async Task MemberCtorAssignment() {
+            const string code = @"
+class x:
+    y: int
+    z = y
+
+a = x().z
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveVariable("a").OfType(BuiltinTypeId.Int);
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task AmbiguousMemberAssignment() {
+            const string code = @"
+class x:
+    x: int
+    y = x
+
+a = x().y
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveVariable("a").OfType(BuiltinTypeId.Int);
+        }
+
+        [TestMethod, Priority(0)]
         public async Task IOErrorBase() {
             const string code = @"
 class A(IOError): ...
 ";
             var analysis = await GetAnalysisAsync(code);
             analysis.Should().HaveClass("A").Which.Should().HaveBase("OSError");
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task SelfBase() {
+            const string code = @"
+class A(A): ...
+
+x = A(1)[0]
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveVariable("x");
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task CircularBase() {
+            const string code = @"
+class A(B): ...
+class B(A): ...
+
+x = A(1)[0]
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveVariable("x");
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task ImportedBaseSameName() {
+            const string code = @"
+from Base import A, B
+
+class A(A, B):
+    def methodA(self, x):
+        return x
+
+class C(B): ...
+
+class B(A):
+    def methodB(self, x):
+        return x
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveClass("A").Which
+                .Should().HaveMethod("methodABase")
+                .And.HaveMethod("methodBBase");
+
+            analysis.Should().HaveClass("B").Which
+                .Should().HaveMethod("methodA")
+                .And.HaveMethod("methodB")
+                .And.HaveMethod("methodABase")
+                .And.HaveMethod("methodBBase");
+
+            analysis.Should().HaveClass("C").Which
+                .Should().HaveMethod("methodBBase")
+                .And.NotHaveMembers("methodB");
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task ImportedVariableSameName() {
+            const string code = @"
+from Base import a, b
+
+class a(a, b):
+    def methodA(self, x):
+        return x
+
+class b(a):
+    def methodB(self, x):
+        return x
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveClass("a").Which
+                .Should().HaveMethod("methodABase")
+                .And.HaveMethod("methodBBase");
+
+            analysis.Should().HaveClass("b").Which
+                .Should().HaveMethod("methodA")
+                .And.HaveMethod("methodB")
+                .And.HaveMethod("methodABase")
+                .And.HaveMethod("methodBBase");
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task CircularBaseImportLater() {
+            const string code = @"
+class A(A): ...
+
+def func():
+    from Base import A
+    return A()
+
+x = func()
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveVariable("x").OfType("A").Which.Should().HaveMember("methodABase");
         }
     }
 }

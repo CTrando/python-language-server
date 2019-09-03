@@ -13,7 +13,6 @@
 // See the Apache Version 2.0 License for specific language governing
 // permissions and limitations under the License.
 
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -23,7 +22,6 @@ using Microsoft.Python.Analysis.Tests.FluentAssertions;
 using Microsoft.Python.Analysis.Types;
 using Microsoft.Python.Core;
 using Microsoft.Python.Parsing.Tests;
-using Microsoft.Python.Tests.Utilities.FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using TestUtilities;
 
@@ -230,6 +228,20 @@ x = f()
             analysis.Should().HaveVariable("TWO").Which.Should().HaveType(BuiltinTypeId.Str);
             var a = analysis.Should().HaveClass("A").Which;
             a.GetMember("x").Should().HaveType(BuiltinTypeId.Int);
+        }
+
+        [TestMethod, Priority(0)]
+        public async Task StarImportDoesNotOverwriteFunction() {
+            const string code = @"
+from sys import *
+
+def exit():
+    return 1234
+
+x = exit()
+";
+            var analysis = await GetAnalysisAsync(code);
+            analysis.Should().HaveVariable("x").OfType(BuiltinTypeId.Int);
         }
     }
 }

@@ -43,15 +43,27 @@ namespace Microsoft.Python.Analysis.Analyzer.Evaluation {
         public void DeclareVariable(string name, IMember value, VariableSource source, IPythonModule module)
             => DeclareVariable(name, value, source, new Location(module));
 
-        public void DeclareVariable(string name, IMember value, VariableSource source, Node location, bool overwrite = false)
+        public void DeclareVariable(string name, IMember value, VariableSource source, Node location, bool overwrite = true)
             => DeclareVariable(name, value, source, GetLocationOfName(location), overwrite);
 
-        public void DeclareVariable(string name, IMember value, VariableSource source, Location location, bool overwrite = false) {
+        public void DeclareVariable(string name, IMember value, VariableSource source, Location location, bool overwrite = true) {
+            if (source == VariableSource.Import) {
+                // Duplicate declaration so if variable gets overwritten it can still be retrieved. Consider:
+                //    from X import A
+                //    class A(A): ...
+                CurrentScope.DeclareImported(name, value, location);
+            }
+
+            var member = GetInScope(name);
+            if (member != null && !overwrite) {
+                return;
+            }
+            
             if (source == VariableSource.Import && value is IVariable v) {
                 CurrentScope.LinkVariable(name, v, location);
                 return;
             }
-            var member = GetInScope(name);
+            
             if (member != null) {
                 if (!value.IsUnknown()) {
                     CurrentScope.DeclareVariable(name, value, source, location);
@@ -63,12 +75,14 @@ namespace Microsoft.Python.Analysis.Analyzer.Evaluation {
 
         public IMember LookupNameInScopes(string name, out IScope scope, out IVariable v, LookupOptions options) {
             scope = null;
+            var classMembers = (options & LookupOptions.ClassMembers) == LookupOptions.ClassMembers;
 
             switch (options) {
+                case LookupOptions.All:
                 case LookupOptions.Normal:
                     // Regular lookup: all scopes and builtins.
                     for (var s = CurrentScope; s != null; s = (Scope)s.OuterScope) {
-                        if (s.Variables.Contains(name)) {
+                        if (s.Variables.TryGetVariable(name, out var v1) && (!v1.IsClassMember || classMembers)) {
                             scope = s;
                             break;
                         }

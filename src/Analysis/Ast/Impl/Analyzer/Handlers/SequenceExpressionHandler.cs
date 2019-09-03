@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Python.Analysis.Analyzer.Evaluation;
 using Microsoft.Python.Analysis.Types;
+using Microsoft.Python.Analysis.Utilities;
 using Microsoft.Python.Analysis.Values;
 using Microsoft.Python.Parsing.Ast;
 
@@ -24,17 +25,17 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
     internal sealed class SequenceExpressionHandler : StatementHandler {
         public SequenceExpressionHandler(AnalysisWalker walker) : base(walker) { }
 
-        public void HandleAssignment(IEnumerable<Expression> lhs, Expression rhs, IMember value) {
+        public void HandleAssignment(SequenceExpression seq, Expression rhs, IMember value) {
             if (rhs is TupleExpression tex) {
-                Assign(lhs, tex, Eval);
+                Assign(seq, tex, Eval);
             } else {
-                Assign(lhs, value, Eval);
+                Assign(seq, value, Eval);
             }
         }
 
-        internal static void Assign(IEnumerable<Expression> lhs, TupleExpression rhs, ExpressionEval eval) {
+        internal static void Assign(SequenceExpression lhs, TupleExpression rhs, ExpressionEval eval) {
             var names = NamesFromSequenceExpression(lhs).ToArray();
-            var values = ValuesFromSequenceExpression(rhs.Items, eval).ToArray();
+            var values = ValuesFromSequenceExpression(rhs, eval).ToArray();
             for (var i = 0; i < names.Length; i++) {
                 IMember value = null;
                 if (values.Length > 0) {
@@ -47,42 +48,46 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
             }
         }
 
-        internal static void Assign(IEnumerable<Expression> lhs, IMember value, ExpressionEval eval) {
-            // Tuple = 'tuple value' (such as from callable). Transfer values.
-            IMember[] values;
-            if (value is IPythonCollection seq) {
-                values = seq.Contents.ToArray();
-            } else {
-                values = new[] { value };
-            }
-
-            var typeEnum = new ValueEnumerator(values, eval.UnknownType);
-            Assign(lhs, typeEnum, eval);
+        internal static void Assign(SequenceExpression seq, IMember value, ExpressionEval eval) {
+            var typeEnum = new ValueEnumerator(value, eval.UnknownType);
+            Assign(seq, typeEnum, eval);
         }
 
-        private static void Assign(IEnumerable<Expression> items, ValueEnumerator valueEnum, ExpressionEval eval) {
-            foreach (var item in items) {
+        private static void Assign(SequenceExpression seq, ValueEnumerator valueEnum, ExpressionEval eval) {
+            foreach (var item in seq.Items) {
                 switch (item) {
                     case StarredExpression stx when stx.Expression is NameExpression nex && !string.IsNullOrEmpty(nex.Name):
+                        eval.DeclareVariable(nex.Name, valueEnum.Next, VariableSource.Declaration, nex);
+                        break;
+                    case ParenthesisExpression pex when pex.Expression is NameExpression nex && !string.IsNullOrEmpty(nex.Name):
                         eval.DeclareVariable(nex.Name, valueEnum.Next, VariableSource.Declaration, nex);
                         break;
                     case NameExpression nex when !string.IsNullOrEmpty(nex.Name):
                         eval.DeclareVariable(nex.Name, valueEnum.Next, VariableSource.Declaration, nex);
                         break;
-                    case TupleExpression te:
-                        Assign(te.Items, valueEnum, eval);
+                    // Nested sequence expression in sequence, Tuple[Tuple[int, str], int], List[Tuple[int], str]
+                    // TODO: Because of bug with how collection types are constructed, they don't make nested collection types
+                    // into instances, meaning we have to create it here
+                    case SequenceExpression se when valueEnum.Peek is IPythonCollection || valueEnum.Peek is IPythonCollectionType:
+                        var collection = valueEnum.Next;
+                        var pc = collection as IPythonCollection;
+                        var pct = collection as IPythonCollectionType;
+                        Assign(se, pc ?? pct.CreateInstance(), eval);
+                        break;
+                    case SequenceExpression se:
+                        Assign(se, valueEnum, eval);
                         break;
                 }
             }
         }
 
-        private static IEnumerable<NameExpression> NamesFromSequenceExpression(IEnumerable<Expression> items) {
+        private static IEnumerable<NameExpression> NamesFromSequenceExpression(SequenceExpression rootSeq) {
             var names = new List<NameExpression>();
-            foreach (var item in items) {
+            foreach (var item in rootSeq.Items) {
                 var expr = item.RemoveParenthesis();
                 switch (expr) {
                     case SequenceExpression seq:
-                        names.AddRange(NamesFromSequenceExpression(seq.Items));
+                        names.AddRange(NamesFromSequenceExpression(seq));
                         break;
                     case NameExpression nex:
                         names.Add(nex);
@@ -92,9 +97,9 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
             return names;
         }
 
-        private static IEnumerable<IMember> ValuesFromSequenceExpression(IEnumerable<Expression> items, ExpressionEval eval) {
+        private static IEnumerable<IMember> ValuesFromSequenceExpression(SequenceExpression seq, ExpressionEval eval) {
             var members = new List<IMember>();
-            foreach (var item in items) {
+            foreach (var item in seq.Items) {
                 var value = eval.GetValueFromExpression(item);
                 switch (value) {
                     case IPythonCollection coll:
@@ -106,31 +111,6 @@ namespace Microsoft.Python.Analysis.Analyzer.Handlers {
                 }
             }
             return members;
-        }
-
-        private class ValueEnumerator {
-            private readonly IMember[] _values;
-            private readonly IMember _filler;
-            private int _index;
-
-            public ValueEnumerator(IMember[] values, IMember filler) {
-                _values = values;
-                _filler = filler;
-            }
-
-            public IMember Next {
-                get {
-                    IMember t;
-                    if (_values.Length > 0) {
-                        t = _index < _values.Length ? _values[_index] : _values[_values.Length - 1];
-                    } else {
-                        t = _filler;
-                    }
-
-                    _index++;
-                    return t;
-                }
-            }
         }
     }
 }

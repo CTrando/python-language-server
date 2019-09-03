@@ -25,41 +25,35 @@ using Microsoft.Python.Analysis.Core.DependencyResolution;
 using Microsoft.Python.Analysis.Core.Interpreter;
 using Microsoft.Python.Analysis.Types;
 using Microsoft.Python.Core;
+using Microsoft.Python.Core.Collections;
 using Microsoft.Python.Core.IO;
 
 namespace Microsoft.Python.Analysis.Modules.Resolution {
     internal sealed class TypeshedResolution : ModuleResolutionBase, IModuleResolution {
-        private readonly IReadOnlyList<string> _typeStubPaths;
+        private readonly ImmutableArray<string> _typeStubPaths;
 
-        public TypeshedResolution(IServiceContainer services) : base(null, services) {
-            BuiltinsModule = _interpreter.ModuleResolution.BuiltinsModule;
-            Modules[BuiltinModuleName] = new ModuleRef(BuiltinsModule);
-
-            var stubs = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Stubs");
-            Root = _interpreter.Configuration?.TypeshedPath;
+        public TypeshedResolution(string root, IServiceContainer services) : base(root, services) {
             // TODO: merge with user-provided stub paths
+            var stubs = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Stubs");
             _typeStubPaths = GetTypeShedPaths(Root)
                 .Concat(GetTypeShedPaths(stubs))
                 .Where(services.GetService<IFileSystem>().DirectoryExists)
-                .ToArray();
+                .ToImmutableArray();
 
-            _log?.Log(TraceEventType.Verbose, @"Typeshed paths:");
+            Log?.Log(TraceEventType.Verbose, @"Typeshed paths:");
             foreach (var p in _typeStubPaths) {
-                _log?.Log(TraceEventType.Verbose, $"    {p}");
+                Log?.Log(TraceEventType.Verbose, $"    {p}");
             }
         }
 
-        internal Task InitializeAsync(CancellationToken cancellationToken = default)
-            => ReloadAsync(cancellationToken);
-
         protected override IPythonModule CreateModule(string name) {
-            var mp = FindModuleInSearchPath(_typeStubPaths, null, name);
-            if (mp != null) {
-                if (mp.Value.IsCompiled) {
-                    _log?.Log(TraceEventType.Warning, "Unsupported native module in stubs", mp.Value.FullName, mp.Value.SourceFile);
+            var moduleImport = CurrentPathResolver.GetModuleImportFromModuleName(name);
+            if (moduleImport != default) {
+                if (moduleImport.IsCompiled) {
+                    Log?.Log(TraceEventType.Warning, "Unsupported native module in stubs", moduleImport.FullName, moduleImport.ModulePath);
                     return null;
                 }
-                return new StubPythonModule(mp.Value.FullName, mp.Value.SourceFile, true, _services);
+                return new StubPythonModule(moduleImport.FullName, moduleImport.ModulePath, true, Services);
             }
 
             var i = name.IndexOf('.');
@@ -68,20 +62,14 @@ namespace Microsoft.Python.Analysis.Modules.Resolution {
                 return null;
             }
 
-            var stubPath = CurrentPathResolver.GetPossibleModuleStubPaths(name).FirstOrDefault(p => _fs.FileExists(p));
-            return stubPath != null ? new StubPythonModule(name, stubPath, true, _services) : null;
+            var stubPath = CurrentPathResolver.GetPossibleModuleStubPaths(name).FirstOrDefault(p => FileSystem.FileExists(p));
+            return stubPath != null ? new StubPythonModule(name, stubPath, true, Services) : null;
         }
 
         public Task ReloadAsync(CancellationToken cancellationToken = default) {
             Modules.Clear();
-            PathResolver = new PathResolver(_interpreter.LanguageVersion);
-
-            var addedRoots = PathResolver.SetRoot(Root);
-            ReloadModulePaths(addedRoots);
-
-            addedRoots = PathResolver.SetInterpreterSearchPaths(_typeStubPaths);
-            ReloadModulePaths(addedRoots);
-
+            PathResolver = new PathResolver(Interpreter.LanguageVersion, Root, _typeStubPaths, ImmutableArray<string>.Empty);
+            ReloadModulePaths(_typeStubPaths.Prepend(Root));
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
         }
@@ -109,41 +97,5 @@ namespace Microsoft.Python.Analysis.Modules.Resolution {
                 yield return Path.Combine(thirdParty, subdir);
             }
         }
-
-        private ModulePath? FindModuleInSearchPath(IReadOnlyList<string> searchPaths, IReadOnlyDictionary<string, string> packages, string name) {
-            if (searchPaths == null || searchPaths.Count == 0) {
-                return null;
-            }
-
-            var i = name.IndexOf('.');
-            var firstBit = i < 0 ? name : name.Remove(i);
-
-            ModulePath mp;
-            Func<string, bool> isPackage = IsPackage;
-            if (firstBit.EndsWithOrdinal("-stubs", ignoreCase: true)) {
-                isPackage = _fs.DirectoryExists;
-            }
-
-            var requireInitPy = ModulePath.PythonVersionRequiresInitPyFiles(Configuration.Version);
-            if (packages != null && packages.TryGetValue(firstBit, out var searchPath) && !string.IsNullOrEmpty(searchPath)) {
-                if (ModulePath.FromBasePathAndName_NoThrow(searchPath, name, isPackage, null, requireInitPy, out mp, out _, out _, out _)) {
-                    return mp;
-                }
-            }
-
-            if (searchPaths.MaybeEnumerate()
-                .Any(sp => ModulePath.FromBasePathAndName_NoThrow(sp, name, isPackage, null, requireInitPy, out mp, out _, out _, out _))) {
-                return mp;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Determines whether the specified directory is an importable package.
-        /// </summary>
-        private bool IsPackage(string directory)
-            => ModulePath.PythonVersionRequiresInitPyFiles(Configuration.Version) ?
-                !string.IsNullOrEmpty(ModulePath.GetPackageInitPy(directory)) :
-                _fs.DirectoryExists(directory);
     }
 }

@@ -53,7 +53,7 @@ namespace Microsoft.Python.Analysis.Analyzer.Symbols {
                 _class = classInfo;
 
                 var bases = ProcessBases();
-                _class.SetBases(bases);
+                _class.SetBases(bases, Eval.CurrentScope);
                 _class.DecideGeneric();
                 // Declare __class__ variable in the scope.
                 Eval.DeclareVariable("__class__", _class, VariableSource.Declaration);
@@ -115,7 +115,7 @@ namespace Microsoft.Python.Analysis.Analyzer.Symbols {
                 if (IsValidBase(a)) {
                     TryAddBase(bases, a);
                 } else {
-                    ReportInvalidBase(a.ToCodeString(Eval.Ast, CodeFormattingOptions.Traditional));
+                    ReportInvalidBase(a);
                 }
             }
 
@@ -196,11 +196,11 @@ namespace Microsoft.Python.Analysis.Analyzer.Symbols {
             _class.AddMembers(members, false);
         }
 
-        private void ReportInvalidBase(string argVal) {
+        private void ReportInvalidBase(Arg arg) {
             Eval.ReportDiagnostics(Eval.Module.Uri,
                 new DiagnosticsEntry(
-                Resources.InheritNonClass.FormatInvariant(argVal),
-                _classDef.NameExpression.GetLocation(Eval)?.Span ?? default,
+                Resources.InheritNonClass.FormatInvariant(arg.ToCodeString(Eval.Ast, CodeFormattingOptions.Traditional)), 
+                Eval.GetLocation(arg)?.Span ?? default,
                 Diagnostics.ErrorCodes.InheritNonClass,
                 Severity.Warning,
                 DiagnosticSource.Analysis

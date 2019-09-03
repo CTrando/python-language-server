@@ -61,7 +61,7 @@ namespace Microsoft.Python.Analysis.Types {
         public static ArgumentSet Empty(Expression expr, IExpressionEvaluator eval) {
             return new ArgumentSet(new List<IMember>(), expr, eval);
         }
-        
+
         /// <summary>
         /// Creates a set of arguments for a call
         ///
@@ -89,10 +89,10 @@ namespace Microsoft.Python.Analysis.Types {
         /// </summary>
         /// <param name="fn">Function type.</param>
         /// <param name="overloadIndex">Function overload to call.</param>
-        /// <param name="instance">Type instance the function is bound to. For derived classes it is different from the declared type.</param>
+        /// <param name="instanceType">Type of the instance the function is bound to. For derived classes it is different from the declared type.</param>
         /// <param name="callExpr">Call expression that invokes the function.</param>
         /// <param name="eval">Evaluator that can calculate values of arguments from their respective expressions.</param>
-        public ArgumentSet(IPythonFunctionType fn, int overloadIndex, IPythonInstance instance, CallExpression callExpr, IExpressionEvaluator eval) {
+        public ArgumentSet(IPythonFunctionType fn, int overloadIndex, IPythonType instanceType, CallExpression callExpr, IExpressionEvaluator eval) {
             Eval = eval;
             OverloadIndex = overloadIndex;
             DeclaringModule = fn.DeclaringModule;
@@ -127,7 +127,7 @@ namespace Microsoft.Python.Analysis.Types {
                 return;
             }
 
-            var callLocation = callExpr.GetLocation(eval);
+            var callLocation = callExpr.Target?.GetLocation(eval);
 
             // https://www.python.org/dev/peps/pep-3102/#id5
             // For each formal parameter, there is a slot which will be used to contain
@@ -160,7 +160,7 @@ namespace Microsoft.Python.Analysis.Types {
             // Class methods
             var formalParamIndex = 0;
             if (fn.DeclaringType != null && fn.HasClassFirstArgument() && slots.Length > 0) {
-                slots[0].Value = instance != null ? instance.GetPythonType() : fn.DeclaringType;
+                slots[0].Value = instanceType ?? fn.DeclaringType;
                 formalParamIndex++;
             }
 
@@ -178,7 +178,7 @@ namespace Microsoft.Python.Analysis.Types {
                     if (formalParamIndex >= overload.Parameters.Count) {
                         // We ran out of formal parameters and yet haven't seen
                         // any sequence or dictionary ones. This looks like an error.
-                        _errors.Add(new DiagnosticsEntry(Resources.Analysis_TooManyFunctionArguments, arg.GetLocation(eval).Span,
+                        _errors.Add(new DiagnosticsEntry(Resources.Analysis_TooManyFunctionArguments, callLocation.Span,
                             ErrorCodes.TooManyFunctionArguments, Severity.Warning, DiagnosticSource.Analysis));
                         return;
                     }
@@ -343,7 +343,7 @@ namespace Microsoft.Python.Analysis.Types {
                 return null;
             }
             using (var sr = new StringReader($"{paramName}={defaultValue}")) {
-                var parser = Parser.CreateParser(sr, Eval.Interpreter.LanguageVersion,ParserOptions.Default);
+                var parser = Parser.CreateParser(sr, Eval.Interpreter.LanguageVersion, ParserOptions.Default);
                 var ast = parser.ParseFile();
                 if (ast.Body is SuiteStatement ste && ste.Statements.Count > 0 && ste.Statements[0] is AssignmentStatement a) {
                     return a.Right;
