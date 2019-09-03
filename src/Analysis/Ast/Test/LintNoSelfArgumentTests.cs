@@ -52,40 +52,6 @@ class Test:
         }
 
         [TestMethod, Priority(0)]
-        public async Task FirstArgumentPropertyNotSelf() {
-            const string code = @"
-class Test:
-    @property
-    def test(x, y, z):
-        pass
-";
-            var analysis = await GetAnalysisAsync(code);
-            analysis.Diagnostics.Should().HaveCount(1);
-
-            var diagnostic = analysis.Diagnostics.ElementAt(0);
-            diagnostic.ErrorCode.Should().Be(ErrorCodes.NoSelfArgument);
-            diagnostic.SourceSpan.Should().Be(4, 14, 4, 15);
-            diagnostic.Message.Should().Be(Resources.NoSelfArgument.FormatInvariant("test"));
-        }
-
-        [TestMethod, Priority(0)]
-        public async Task FirstArgumentAbstractPropertyNotSelf() {
-            const string code = @"
-class Test:
-    @abstractproperty
-    def test(x, y, z):
-        pass
-";
-            var analysis = await GetAnalysisAsync(code);
-            analysis.Diagnostics.Should().HaveCount(1);
-
-            var diagnostic = analysis.Diagnostics.ElementAt(0);
-            diagnostic.ErrorCode.Should().Be(ErrorCodes.NoSelfArgument);
-            diagnostic.SourceSpan.Should().Be(4, 14, 4, 15);
-            diagnostic.Message.Should().Be(Resources.NoSelfArgument.FormatInvariant("test"));
-        }
-
-        [TestMethod, Priority(0)]
         public async Task FirstArgumentNotSelfMultiple() {
             const string code = @"
 class Test:

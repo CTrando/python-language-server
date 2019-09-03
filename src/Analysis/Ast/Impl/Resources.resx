@@ -200,6 +200,7 @@
   </data>
   <data name="NewTypeFirstArgNotString" xml:space="preserve">
     <value>The first argument to NewType must be a string, but it is of type '{0}'.</value>
+  </data>
   <data name="NewTypeFirstArgument" xml:space="preserve">
     <value>The first argument to NewType must be a string.</value>
   </data>

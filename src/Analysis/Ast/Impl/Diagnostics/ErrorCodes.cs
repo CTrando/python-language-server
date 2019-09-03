@@ -33,10 +33,5 @@ namespace Microsoft.Python.Analysis.Diagnostics {
         public const string NoSelfArgument = "no-self-argument";
         public const string NoClsArgument = "no-cls-argument";
         public const string NoMethodArgument = "no-method-argument";
-        public const string ReturnInInit = "return-in-init";
-        public const string TypingTypeVarArguments = "typing-typevar-arguments";
-        public const string TypingNewTypeArguments = "typing-newtype-arguments";
-        public const string TypingGenericArguments = "typing-generic-arguments";
-        public const string InheritNonClass = "inherit-non-class";
     }
 }
